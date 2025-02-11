@@ -2,20 +2,18 @@ name: Build, Upload, and Sync
 
 on:
   release:
-    types: [ published ] # 自动触发同步
+    types: [ published ]
 
 jobs:
   build-and-sync:
     runs-on: ubuntu-latest
 
     steps:
-      # 设置时区为亚洲/上海
       - name: Set Timezone to Asia/Shanghai
         run: |
           sudo timedatectl set-timezone Asia/Shanghai
           echo "Current time: $(date)"
 
-      # 检出代码
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
@@ -27,57 +25,34 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      # 获取原仓库的预发行版属性
       - name: Get Original Repository Pre-release Property
         id: pre_release
         run: |
           echo "IS_PRERELEASE=$(if [ "${{ github.event.release.prerelease }}" = true ]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
 
-      # 赋予 Gradlew 执行权限
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # 同时编译 Normal 和 Compatible APK
       - name: Build Normal and Compatible APKs
         run: |
           ./gradlew assembleNormalRelease assembleCompatibleRelease -Pversion=${{ github.ref_name }}
 
-      - name: Sign Normal APK
-        id: sign_normal_apk
-        uses: ilharp/sign-android-release@v1
-        with:
-          releaseDir: app/build/outputs/apk/normal/release/
-          signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
-          keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          buildToolsVersion: 34.0.0
-
-      - name: Sign Compatible APK
-        id: sign_compatible_apk
-        uses: ilharp/sign-android-release@v1
-        with:
-          releaseDir: app/build/outputs/apk/compatible/release/
-          signingKey: ${{ secrets.ANDROID_SIGNING_KEY }}
-          keyAlias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          buildToolsVersion: 34.0.0
-
+      - name: List APK Files  # 调试步骤
+        run: |
+          ls -R app/build/outputs/apk/
 
       - name: Generate APKS Checksum
         run: |
-          sha256sum ${{ steps.sign_normal_apk.outputs.signedFile  }} > CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
-          sha256sum ${{ steps.sign_compatible_apk.outputs.signedFile }} > CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
-
+          sha256sum app/build/outputs/apk/normal/release/Sesame-Normal-*.apk > CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
+          sha256sum app/build/outputs/apk/compatible/release/Sesame-Compatible-*.apk > CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
 
       - name: Upload Assets to Source Release
         uses: softprops/action-gh-release@v2
         with:
-          nanme: Sesame-${{ github.event.release.tag_name || github.ref_name }} # 发布的名称。默认为标签名称
+          name: Sesame-${{ github.event.release.tag_name || github.ref_name }}
           files: |
-            ${{ steps.sign_normal_apk.outputs.signedFile }}
-            ${{ steps.sign_compatible_apk.outputs.signedFile }}
+            app/build/outputs/apk/normal/release/Sesame-Normal-*.apk
+            app/build/outputs/apk/compatible/release/Sesame-Compatible-*.apk
             CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
             CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
           tag_name: ${{ github.ref_name }}
@@ -93,11 +68,11 @@ jobs:
       - name: Sync Release to Target Repository
         uses: softprops/action-gh-release@v2
         with:
-          repository: Xposed-Modules-Repo/fansirsqi.xposed.sesame # 目标仓库的拥有者和仓库名称
-          nanme: Sesame-${{ github.event.release.tag_name || github.ref_name }} # 发布的名称。默认为标签名称
+          repository: Xposed-Modules-Repo/fansirsqi.xposed.sesame
+          name: Sesame-${{ github.event.release.tag_name || github.ref_name }}
           files: |
-            ${{ steps.sign_normal_apk.outputs.signedFile }}
-            ${{ steps.sign_compatible_apk.outputs.signedFile }}
+            app/build/outputs/apk/normal/release/Sesame-Normal-*.apk
+            app/build/outputs/apk/compatible/release/Sesame-Compatible-*.apk
             CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
             CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
           token: ${{ secrets.TARGET_REPO_PAT }}
@@ -117,5 +92,3 @@ jobs:
           -d "chat_id=${{ secrets.TG_CHAT_ID }}" \
           -d "text=📦 New Release [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}) Published! %0A%0A${{ github.event.release.body }}" \
           -d "parse_mode=Markdown"
-
-
