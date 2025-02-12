@@ -23,7 +23,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: gradle
+          cache: false  # 禁用缓存
 
       - name: Get Original Repository Pre-release Property
         id: pre_release
@@ -32,6 +32,10 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Clean Gradle Cache  # 清理缓存
+        run: |
+          ./gradlew clean
 
       - name: Build Normal and Compatible APKs
         run: |
