@@ -1,98 +1,43 @@
-name: Build, Upload, and Sync
+name: Build Only
 
 on:
   release:
     types: [ published ]
 
 jobs:
-  build-and-sync:
+  build:
     runs-on: ubuntu-latest
 
     steps:
+      # 设置时区为亚洲/上海
       - name: Set Timezone to Asia/Shanghai
         run: |
           sudo timedatectl set-timezone Asia/Shanghai
           echo "Current time: $(date)"
 
+      # 检出代码
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
+      # 设置 JDK 环境
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: false  # 禁用缓存
+          cache: gradle
 
-      - name: Get Original Repository Pre-release Property
-        id: pre_release
-        run: |
-          echo "IS_PRERELEASE=$(if [ "${{ github.event.release.prerelease }}" = true ]; then echo 'true'; else echo 'false'; fi)" >> $GITHUB_OUTPUT
-
+      # 赋予 Gradlew 执行权限
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Clean Gradle Cache  # 清理缓存
-        run: |
-          ./gradlew clean
-
+      # 构建 Normal 和 Compatible APK
       - name: Build Normal and Compatible APKs
         run: |
           ./gradlew assembleNormalRelease assembleCompatibleRelease -Pversion=${{ github.ref_name }}
 
-      - name: List APK Files  # 调试步骤
+      # 调试步骤：列出生成的 APK 文件
+      - name: List APK Files
         run: |
           ls -R app/build/outputs/apk/
-
-      - name: Generate APKS Checksum
-        run: |
-          sha256sum app/build/outputs/apk/normal/release/Sesame-Normal-*.apk > CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
-          sha256sum app/build/outputs/apk/compatible/release/Sesame-Compatible-*.apk > CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
-
-      - name: Upload Assets to Source Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Sesame-${{ github.event.release.tag_name || github.ref_name }}
-          files: |
-            app/build/outputs/apk/normal/release/Sesame-Normal-*.apk
-            app/build/outputs/apk/compatible/release/Sesame-Compatible-*.apk
-            CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
-            CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
-          tag_name: ${{ github.ref_name }}
-          draft: false
-          append_body: true
-          generate_release_notes: true
-          body: |
-            > ### 墙内更新
-            > [抗揍云-LanZou](https://fansirs.lanzoue.com/b011kv6pwd) 密码:`9527`
-            > [Alist分流-LanZou](https://alist.byseven.us.kg/LanZou/Sesame-TK) 密码:`9527`
-            > [Alist分流-ALiYun](https://alist.byseven.us.kg/AliYun/share/Sesame-TK) 密码:`9527`
-
-      - name: Sync Release to Target Repository
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: Xposed-Modules-Repo/fansirsqi.xposed.sesame
-          name: Sesame-${{ github.event.release.tag_name || github.ref_name }}
-          files: |
-            app/build/outputs/apk/normal/release/Sesame-Normal-*.apk
-            app/build/outputs/apk/compatible/release/Sesame-Compatible-*.apk
-            CHECKSUMS-Sesame-Normal-${{ github.event.release.tag_name || github.ref_name }}.sha256
-            CHECKSUMS-Sesame-Compatible-${{ github.event.release.tag_name || github.ref_name }}.sha256
-          token: ${{ secrets.TARGET_REPO_PAT }}
-          tag_name: ${{ github.ref_name }}
-          draft: false
-          prerelease: ${{ steps.pre_release.outputs.IS_PRERELEASE }}
-          append_body: false
-          make_latest: true
-          body: |
-            📦 本 Release 同步自源仓库 [Sesame-TK](https://github.com/${{ github.repository }})
-            ✨ **更新内容**:
-            ${{ github.event.release.body || '无更新说明' }}
-
-      - name: TgBot Notification
-        run: |
-          curl -X POST "https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage" \
-          -d "chat_id=${{ secrets.TG_CHAT_ID }}" \
-          -d "text=📦 New Release [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}) Published! %0A%0A${{ github.event.release.body }}" \
-          -d "parse_mode=Markdown"
